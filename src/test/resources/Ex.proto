@@ -1,0 +1,26 @@
+package prototest;
+
+message Hobby {
+ required string name = 1;
+}
+
+message Person {
+ required int32 id = 1;
+ required string name = 2;
+ optional string email = 3;
+ optional Hobby hobby = 4;
+}
+
+message AddressBook {
+ repeated Person person = 1;
+}
+
+message AThing {
+ repeated string toys = 1;
+ repeated int32 luckynumbers = 2;
+}
+
+message AList {
+ repeated int32 age = 1;
+ repeated AThing things = 2;
+}
