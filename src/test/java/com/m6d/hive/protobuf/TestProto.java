@@ -1,9 +1,5 @@
 package com.m6d.hive.protobuf;
 
-import com.google.protobuf.Descriptors.Descriptor;
-import com.google.protobuf.Descriptors.FieldDescriptor;
-import com.google.protobuf.Message;
-import com.google.protobuf.UnknownFieldSet;
 import com.jointhegrid.hive_test.HiveTestService;
 
 import java.io.ByteArrayOutputStream;
@@ -11,7 +7,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
@@ -25,10 +20,11 @@ import org.apache.hadoop.mapred.SequenceFileInputFormat;
 import org.apache.hadoop.mapred.SequenceFileOutputFormat;
 import org.junit.Assert;
 import prototest.Ex;
+import prototest.Ex.AList;
+import prototest.Ex.AThing;
 import prototest.Ex.AddressBook;
 import prototest.Ex.Hobby;
 import prototest.Ex.Person;
-import prototest.Ex.PersonOrBuilder;
 
 public class TestProto extends HiveTestService {
 
@@ -36,6 +32,63 @@ public class TestProto extends HiveTestService {
     super();
   }
 
+  public void testArrayParse() {
+    AList.Builder abuild = AList.newBuilder();
+
+    ProtobufDeserializer de = new ProtobufDeserializer();
+    List<String> cols = new ArrayList<String>();
+    List<TypeInfo> types = new ArrayList<TypeInfo>();
+    de.populateTypeInfoForClass(abuild.build().getClass(), cols, types, 0);
+
+    ArrayList<String> alistExpectedCols = new ArrayList();
+    alistExpectedCols.add("AgeCount");
+    alistExpectedCols.add("AgeList");
+    alistExpectedCols.add("ThingsCount");
+    alistExpectedCols.add("ThingsList");
+    Assert.assertEquals(alistExpectedCols, cols);
+
+    ArrayList<TypeInfo> alistExpectedTypes = new ArrayList<TypeInfo>();
+    alistExpectedTypes.add(TypeInfoFactory.intTypeInfo);
+    alistExpectedTypes.add(TypeInfoFactory.getListTypeInfo(TypeInfoFactory.intTypeInfo));
+    alistExpectedTypes.add(TypeInfoFactory.intTypeInfo);
+
+    List<String> aThingCols = Arrays.<String>asList( "LuckynumbersCount",
+            "LuckynumbersList", "ToysCount", "ToysList");
+    List<TypeInfo> aThingTypes = new ArrayList<TypeInfo>();
+    aThingTypes.add(TypeInfoFactory.intTypeInfo);
+    aThingTypes.add(TypeInfoFactory.getListTypeInfo(TypeInfoFactory.intTypeInfo));
+    aThingTypes.add(TypeInfoFactory.intTypeInfo);
+    aThingTypes.add(TypeInfoFactory.getListTypeInfo(TypeInfoFactory.stringTypeInfo));
+
+    TypeInfo aThing = TypeInfoFactory.getStructTypeInfo(aThingCols, aThingTypes);
+    alistExpectedTypes.add(TypeInfoFactory.getListTypeInfo(aThing));
+
+    Assert.assertEquals(alistExpectedTypes, types);
+
+    List<ObjectInspector> results = new ArrayList<ObjectInspector>();
+    for (int i=0;i<types.size();i++){
+      results.add( de.createObjectInspectorWorker(types.get(i)) );
+    }
+
+    List<ObjectInspector> alistExpectedOIResults = new ArrayList<ObjectInspector>();
+    alistExpectedOIResults.add(PrimitiveObjectInspectorFactory.javaIntObjectInspector);
+    alistExpectedOIResults.add(ObjectInspectorFactory.getStandardListObjectInspector
+            (PrimitiveObjectInspectorFactory.javaIntObjectInspector));
+    alistExpectedOIResults.add(PrimitiveObjectInspectorFactory.javaIntObjectInspector);
+
+      List<ObjectInspector> colOis = new ArrayList<ObjectInspector>();
+      colOis.add( PrimitiveObjectInspectorFactory.javaIntObjectInspector);
+      colOis.add( ObjectInspectorFactory.getStandardListObjectInspector(PrimitiveObjectInspectorFactory.javaIntObjectInspector));
+      colOis.add( PrimitiveObjectInspectorFactory.javaIntObjectInspector);
+      colOis.add( ObjectInspectorFactory.getStandardListObjectInspector(PrimitiveObjectInspectorFactory.javaStringObjectInspector));
+
+      ObjectInspector aThingOIStruct = ObjectInspectorFactory.getStandardStructObjectInspector(aThingCols, colOis);
+
+    alistExpectedOIResults.add(ObjectInspectorFactory.getStandardListObjectInspector(aThingOIStruct));
+    Assert.assertEquals(alistExpectedOIResults, results);
+
+  }
+  
   /* Recursively walk the protobuf and map properties to type info */
   public void testTypeInfo() {
     Person.Builder bbuild = Person.newBuilder();
@@ -148,6 +201,41 @@ public class TestProto extends HiveTestService {
     Assert.assertEquals(expectedResults,results);
   }
 
+  public void testAlist() throws Exception {
+
+    AThing.Builder aThingBuild = AThing.newBuilder();
+    AThing aThing = aThingBuild.addLuckynumbers(7).addLuckynumbers(4).addToys("car").build();
+    AList.Builder aListBuild = AList.newBuilder();
+    AList aList = aListBuild.addAge(2).addAge(3).addThings(aThing).build();
+
+
+    BytesWritable key = new BytesWritable();
+    BytesWritable value = new BytesWritable();
+
+    ByteArrayOutputStream s = new ByteArrayOutputStream();
+    aList.writeTo(s);
+    key.set(s.toByteArray(), 0, s.toByteArray().length);
+    value.set(s.toByteArray(), 0, s.toByteArray().length);
+
+    Pair p = new Pair();
+    p.setKey(key);
+    p.setValue(value);
+
+
+    ProtobufDeserializer de = new ProtobufDeserializer();
+    de.keyClass = Ex.AList.class;
+    de.valueClass = Ex.AList.class;
+    de.parseFrom = de.keyClass.getMethod("parseFrom", de.parameters);
+    de.vparseFrom = de.valueClass.getMethod("parseFrom", de.parameters);
+    Object returnObj = de.deserialize(p);
+    ArrayList keyVal = (ArrayList) returnObj;
+    System.out.println(keyVal);
+    List keyObj = (List) keyVal.get(0);
+    List valObj = (List) keyVal.get(1);
+   
+
+  }
+
   public void testDeserialize() throws Exception {
 
     Person.Builder bbuild = Person.newBuilder();
@@ -172,7 +260,10 @@ public class TestProto extends HiveTestService {
     de.valueClass = Ex.Person.class;
     de.parseFrom = de.keyClass.getMethod("parseFrom", de.parameters);
     de.vparseFrom = de.valueClass.getMethod("parseFrom", de.parameters);
-    de.deserialize(p);
+
+    Object result = de.deserialize(p);
+
+    
 
 
   }
@@ -389,4 +480,78 @@ public class TestProto extends HiveTestService {
     client.execute("drop table protolist");
 
   }
+
+
+  public void testListPrimitiveTable() throws Exception {
+    client.execute("create table  protoprimlist   "
+            + " ROW FORMAT SERDE '" + ProtobufDeserializer.class.getName() + "'"
+            + " WITH SERDEPROPERTIES ('KEY_SERIALIZE_CLASS'='" + Ex.AList.class.getName() + "','VALUE_SERIALIZE_CLASS'='" + Ex.AList.class.getName() + "'   )"
+            + " STORED AS INPUTFORMAT '" + SequenceFileInputFormat.class.getName() + "'"
+            + " OUTPUTFORMAT '" + SequenceFileOutputFormat.class.getName() + "'");
+
+    client.execute("describe protoprimlist");
+    List<String> results = client.fetchAll();
+    Assert.assertEquals(2, results.size());
+    
+    String expectKey = "key\tstruct<agecount:int,agelist:array<int>,thingscount:int,thingslist:array<struct<luckynumberscount:int,luckynumberslist:array<int>,toyscount:int,toyslist:array<string>>>>\tfrom deserializer";
+    assertEquals(expectKey, results.get(0));
+
+    client.execute("drop table protoprimlist");
+
+  }
+
+
+
+
+   public void testCreateAndReadTableList() throws Exception {
+    Path p = new Path(this.ROOT_DIR, "protolistfile");
+    SequenceFile.Writer w = SequenceFile.createWriter(this.getFileSystem(), new Configuration(), p, BytesWritable.class, BytesWritable.class);
+
+    AThing.Builder aThingBuild = AThing.newBuilder();
+    AThing aThing = aThingBuild.addLuckynumbers(7).addLuckynumbers(4).addToys("car").build();
+    AList.Builder aListBuild = AList.newBuilder();
+    AList aList = aListBuild.addAge(2).addAge(3).addThings(aThing).build();
+
+    BytesWritable key = new BytesWritable();
+    BytesWritable value = new BytesWritable();
+    ByteArrayOutputStream s = new ByteArrayOutputStream();
+    aList.writeTo(s);
+
+
+    ByteArrayOutputStream t = new ByteArrayOutputStream();
+    aList.writeTo(t);
+
+    key.set(s.toByteArray(), 0, s.size());
+    value.set(t.toByteArray(), 0, t.size());
+    w.append(key, value);
+    w.close();
+
+        String jarFile;
+    jarFile = KVAsVSeqFileBinaryInputFormat.class.getProtectionDomain().getCodeSource().getLocation().getFile();
+
+    System.out.println("set hive.aux.jars.path=file:///"+jarFile);
+
+    client.execute("add jar " + jarFile);
+    client.execute("set hive.aux.jars.path=file:///"+jarFile);
+
+    client.execute("create table  tablewithlist   "
+            + " ROW FORMAT SERDE '" + ProtobufDeserializer.class.getName() + "'"
+            + " WITH SERDEPROPERTIES ('KEY_SERIALIZE_CLASS'='" + Ex.AList.class.getName()
+            + "','VALUE_SERIALIZE_CLASS'='" + Ex.AList.class.getName() + "'   )"
+            + " STORED AS INPUTFORMAT '" + KVAsVSeqFileBinaryInputFormat.class.getName() + "'"
+            + " OUTPUTFORMAT '" + SequenceFileOutputFormat.class.getName() + "'");
+
+    client.execute("load data local inpath '" + p.toString() + "' into table tablewithlist");
+    client.execute("SELECT key FROM tablewithlist");
+
+    List<String> results = client.fetchAll();
+    String expected="";
+    expected = "{\"agecount\":2,\"agelist\":[2,3],\"thingscount\":1,\"thingslist\":[{\"luckynumberscount\":2,\"luckynumberslist\":[7,4],\"toyscount\":1,\"toyslist\":[\"car\"]}]}";
+    Assert.assertEquals(expected, results.get(0));
+    client.execute("drop table tablewithlist");
+
+  }
+
+
+
 }

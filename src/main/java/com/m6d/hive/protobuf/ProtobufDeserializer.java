@@ -162,11 +162,15 @@ public class ProtobufDeserializer implements Deserializer{
            Object listObject = reflectGet(proto,columnNames.get(i));
            ListObjectInspector li = (ListObjectInspector) ois.get(i);
            ObjectInspector subOi =li.getListElementObjectInspector();
+           //System.out.println( "column name "+ columnNames.get(i) ); 
+           //System.out.println(" column type "+li.getTypeName());
            if (subOi.getCategory()==Category.PRIMITIVE){
+             //System.out.println(" primative");
              row.add(listObject);
              //TODO: current units do not cover this
            }
            if (subOi.getCategory() == Category.STRUCT) {
+             //System.out.println(" struct");
              List x = (List) listObject;
 
              StructObjectInspector soi = (StructObjectInspector) subOi;
@@ -180,7 +184,8 @@ public class ProtobufDeserializer implements Deserializer{
              List arrayOfStruct = new ArrayList();
              for (int it=0;it<x.size();it++){
                 List<Object> subList = new ArrayList<Object>();
-                matchProtoToRow(x.get(i),subList,subOis,subCols);
+                //matchProtoToRow(x.get(i),subList,subOis,subCols);
+                matchProtoToRow(x.get(it),subList,subOis,subCols);
                 arrayOfStruct.add(subList);
              }
              row.add(arrayOfStruct);
@@ -292,9 +297,11 @@ public class ProtobufDeserializer implements Deserializer{
 
       // list
       if (isaList(m.getReturnType())){
+        //System.out.println(m +" this is a list");
         String columnName = m.getName().substring(3);
         Class listClass = null;
         Type returnType = m.getGenericReturnType();
+        //System.out.println(m +" the return type "+returnType);
         if (returnType instanceof ParameterizedType){
           ParameterizedType type = (ParameterizedType) returnType;
           Type[] typeArguments = type.getActualTypeArguments();
@@ -302,17 +309,17 @@ public class ProtobufDeserializer implements Deserializer{
             Class typeArgClass = (Class) typeArgument;
             //System.out.println("typeArgClass = " + typeArgClass);
             listClass = (Class) typeArgument;
+            //System.out.println("The list class is "+listClass);
           }
         }
-        if (listClass.isPrimitive()){
-          List<String> subColumnNames = new ArrayList<String>();
-          List<TypeInfo> subColumnTypes = new ArrayList<TypeInfo>();
-          populateTypeInfoForClass(listClass,subColumnNames,subColumnTypes,0);
+        if (listClass.equals( Integer.class ) || listClass.equals(String.class) 
+                || listClass.equals(Long.class) || listClass.equals(Float.class)
+                || listClass.equals(Double.class) || listClass.equals(Short.class)
+                || listClass.equals(Byte.class) || listClass.equals(Boolean.class)){
           columnNames.add(columnName);
-          columnTypes.add(TypeInfoFactory.getListTypeInfo(subColumnTypes.get(0)));
-        } else if (isaList(listClass)){
-          //  handle nested list
+          columnTypes.add(TypeInfoFactory.getListTypeInfo(TypeInfoFactory.getPrimitiveTypeInfoFromJavaPrimitive(listClass)));
         } else {
+
           List<String> subColumnNames = new ArrayList<String>();
           List<TypeInfo> subColumnTypes = new ArrayList<TypeInfo>();
           populateTypeInfoForClass(listClass,subColumnNames,subColumnTypes,0);
@@ -320,6 +327,7 @@ public class ProtobufDeserializer implements Deserializer{
           TypeInfo build = TypeInfoFactory.getStructTypeInfo(subColumnNames, subColumnTypes);
           columnTypes.add(TypeInfoFactory.getListTypeInfo(build));
         }
+        //  handle nested list
       }
 
       if ( m.getReturnType().getSuperclass() != null){
