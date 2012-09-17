@@ -349,10 +349,13 @@ public class TestProto extends HiveTestService {
             + " OUTPUTFORMAT '" + SequenceFileOutputFormat.class.getName() + "'");
 
     client.execute("load data local inpath '" + p.toString() + "' into table address");
-    client.execute("SELECT key from address");
+    client.execute("SELECT key from address ");
 
     List<String> results = client.fetchAll();
-    String expectedResuls = "{\"personcount\":2,\"personlist\":[{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"\"},\"id\":10,\"name\":\"stan\"},{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"\"},\"id\":10,\"name\":\"stan\"}]}";
+    //String expectedResuls = "{\"personcount\":2,\"personlist\":[{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"\"},\"id\":10,\"name\":\"stan\"},{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"\"},\"id\":10,\"name\":\"stan\"}]}";
+
+    String expectedResuls="{\"personcount\":2,\"personlist\":[{\"email\":\"pete@aol.com\",\"hobby\":{\"name\":\"\"},\"id\":4,\"name\":\"pete\"},{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"\"},\"id\":10,\"name\":\"stan\"}]}";
+    //String expectedResuls= "";
     Assert.assertEquals(expectedResuls, results.get(0));
 
 
