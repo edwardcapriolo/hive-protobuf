@@ -426,11 +426,9 @@ public class ProtobufDeserializer implements Deserializer{
     boolean match = false;
     if (c.equals(java.util.List.class)) {
       return true;
-    }
-    if (c.equals(java.util.Collection.class)) {
+    } else if (c.equals(java.util.Collection.class)) {
       return true;
-    }
-    if (c.equals(java.util.ArrayList.class)) {
+    } if (c.equals(java.util.ArrayList.class)) {
       return true;
     }
     return match;
