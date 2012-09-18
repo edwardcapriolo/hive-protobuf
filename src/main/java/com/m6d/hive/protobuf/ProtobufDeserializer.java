@@ -15,6 +15,7 @@ limitations under the License.
 */
 package com.m6d.hive.protobuf;
 
+import com.google.protobuf.Descriptors.FieldDescriptor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -168,6 +169,7 @@ public class ProtobufDeserializer implements Deserializer{
          case PRIMITIVE:
            row.add(reflectGet(proto,columnNames.get(i)));
            //row.add(this.protoGet(proto, columnNames.get(i)));
+           //row.add( this.protoCacheGet(proto, columnNames.get(i)) );
            break;
          case LIST:
            Object listObject = reflectGet(proto,columnNames.get(i));
@@ -410,8 +412,42 @@ public class ProtobufDeserializer implements Deserializer{
       return reflectGet(o,prop);
     }
     GeneratedMessage m = (GeneratedMessage) o;
-
+    //FieldDescriptor f =m.getDescriptorForType().findFieldByName(prop);
     return m.getField( m.getDescriptorForType().findFieldByName(prop) );
+  }
+
+  Map<ClassMethod,FieldDescriptor> protoCache= new HashMap<ClassMethod,FieldDescriptor>();
+
+  public Object protoCacheGet(Object o, String prop){
+    prop = prop.toLowerCase();
+    if (prop.equals("serializedsize")){
+      return reflectGet(o,prop);
+    }
+    if (prop.endsWith("count")){
+      return reflectGet(o,prop);
+    }
+    GeneratedMessage m = (GeneratedMessage) o;
+    StringBuilder sb = new StringBuilder();
+    sb.append("get");
+    sb.append(prop);
+    ClassMethod cm = new ClassMethod(o.getClass(),sb.toString());
+    FieldDescriptor f =this.protoCache.get(cm);
+    if (f == null){
+      //System.out.println("prop" + prop);
+
+      f = m.getDescriptorForType().findFieldByName(prop);
+      if (f==null){
+        //System.out.println("descriptor not found");
+        /*for (FieldDescriptor fi: m.getDescriptorForType().getFields()){
+          System.out.println( fi.getName() );
+        }*/
+      } else {
+        //System.out.println("found descriptor ");
+      }
+      this.protoCache.put(cm, f);
+    }
+    return m.getField(f);
+
   }
   
   public Object reflectGet(Object o, String prop) {
