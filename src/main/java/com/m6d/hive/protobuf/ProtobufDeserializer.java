@@ -85,14 +85,16 @@ public class ProtobufDeserializer implements Deserializer{
   public void initialize(Configuration job, Properties tbl) throws SerDeException {
     try {
       String keyClassName = tbl.getProperty(KEY_SERIALIZE_CLASS);
-      keyClass = job.getClassByName(keyClassName);
+      if (keyClassName != null){
+        keyClass = job.getClassByName(keyClassName);
+        parseFrom = keyClass.getMethod("parseFrom", parameters);
+      }
       String valueClassName = tbl.getProperty(VALUE_SERIALIZE_CLASS);
-      valueClass = job.getClassByName(valueClassName);
-
-      parseFrom = keyClass.getMethod("parseFrom", parameters);
-      vparseFrom = valueClass.getMethod("parseFrom", parameters);
+      if (valueClassName != null ){
+        valueClass = job.getClassByName(valueClassName);
+        vparseFrom = valueClass.getMethod("parseFrom", parameters);
+      }
       this.oi= buildObjectInspector();
-
     } catch (Exception ex) {
       throw new SerDeException(ex.getMessage(), ex);
     }
@@ -120,13 +122,16 @@ public class ProtobufDeserializer implements Deserializer{
     Object parsedResult = null;
     Object vparsedResult = null;
     try {
-      byte [] b = new byte [key.getLength()];
-      System.arraycopy(key.getBytes(), 0, b, 0, key.getLength());
-      parsedResult = parseFrom.invoke(null, b);
-      
-      byte [] c = new byte [ value.getLength()];
-      System.arraycopy(value.getBytes(), 0, c, 0, value.getLength());
-      vparsedResult = vparseFrom.invoke(null, c);
+      if (parseFrom != null) {
+        byte [] b = new byte [key.getLength()];
+        System.arraycopy(key.getBytes(), 0, b, 0, key.getLength());
+        parsedResult = parseFrom.invoke(null, b);
+      }
+      if (vparseFrom != null) {
+        byte [] c = new byte [ value.getLength()];
+        System.arraycopy(value.getBytes(), 0, c, 0, value.getLength());
+        vparsedResult = vparseFrom.invoke(null, c);
+      }
     } catch (IllegalAccessException ex) {
       throw new SerDeException(ex.getMessage(), ex);
     } catch (IllegalArgumentException ex) {
@@ -140,13 +145,19 @@ public class ProtobufDeserializer implements Deserializer{
 
     row.clear();
     keyRow.clear();
-    this.matchProtoToRow(parsedResult, keyRow, keyOIs, keyColumnNames);
-
+    if (parseFrom !=null){
+      this.matchProtoToRow(parsedResult, keyRow, keyOIs, keyColumnNames);
+      row.add(keyRow);
+    } else {
+      row.add(null);
+    }
     valueRow.clear();
-    this.matchProtoToRow(vparsedResult, valueRow, valueOIs, valueColumnNames);
-    
-    row.add(keyRow);
-    row.add(valueRow);
+    if (vparseFrom !=null){
+      this.matchProtoToRow(vparsedResult, valueRow, valueOIs, valueColumnNames);
+      row.add(valueRow);
+    } else {
+      row.add(null);
+    }
     return row;
   }
 
@@ -227,7 +238,12 @@ public class ProtobufDeserializer implements Deserializer{
     keyColumnNames = new ArrayList<String>();
     keyColumnTypes = new ArrayList<TypeInfo>();
 
-    populateTypeInfoForClass(this.keyClass, keyColumnNames,keyColumnTypes,0 );
+    if (this.parseFrom != null){
+      populateTypeInfoForClass(this.keyClass, keyColumnNames,keyColumnTypes,0 );
+    } else {
+      keyColumnNames.add("undefined");
+      keyColumnTypes.add(TypeInfoFactory.booleanTypeInfo);
+    }
     //keyOIs = new ArrayList<ObjectInspector>();
     for(int i = 0; i < keyColumnNames.size(); i++) {
       keyOIs.add(i, createObjectInspectorWorker(keyColumnTypes.get(i)));
@@ -236,7 +252,12 @@ public class ProtobufDeserializer implements Deserializer{
 
     valueColumnNames = new ArrayList<String>();
     valueColumnTypes = new ArrayList<TypeInfo>();
-    populateTypeInfoForClass(this.valueClass,valueColumnNames,valueColumnTypes,0);
+    if (this.vparseFrom != null){
+      populateTypeInfoForClass(this.valueClass,valueColumnNames,valueColumnTypes,0);
+    } else {
+      valueColumnNames.add("undefined");
+      valueColumnTypes.add(TypeInfoFactory.booleanTypeInfo);
+    }
     //valueOIs = new ArrayList<ObjectInspector>();
     for(int i = 0; i < valueColumnNames.size(); i++) {
       valueOIs.add(i, createObjectInspectorWorker(valueColumnTypes.get(i)));

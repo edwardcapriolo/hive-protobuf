@@ -305,7 +305,6 @@ public class TestProto extends HiveTestService {
 
   }
 
-
   public void testListWithAddressBook() throws Exception {
     Path p = new Path(ROOT_DIR, "addressbook");
     SequenceFile.Writer w = SequenceFile.createWriter(this.getFileSystem(),
@@ -518,9 +517,6 @@ public class TestProto extends HiveTestService {
 
   }
 
-
-
-
    public void testCreateAndReadTableList() throws Exception {
     Path p = new Path(this.ROOT_DIR, "protolistfile");
     SequenceFile.Writer w = SequenceFile.createWriter(this.getFileSystem(), new Configuration(), p, BytesWritable.class, BytesWritable.class);
@@ -567,6 +563,56 @@ public class TestProto extends HiveTestService {
     expected = "{\"agecount\":2,\"agelist\":[2,3],\"thingscount\":1,\"thingslist\":[{\"luckynumberscount\":2,\"luckynumberslist\":[7,4],\"toyscount\":1,\"toyslist\":[\"car\"]}]}";
     Assert.assertEquals(expected, results.get(0));
     client.execute("drop table tablewithlist");
+
+  }
+
+
+  public void testNotdefined() throws Exception {
+    Path p = new Path(this.ROOT_DIR, "nada");
+    SequenceFile.Writer w = SequenceFile.createWriter(this.getFileSystem(), new Configuration(), p, BytesWritable.class, BytesWritable.class);
+
+    AThing.Builder aThingBuild = AThing.newBuilder();
+    AThing aThing = aThingBuild.addLuckynumbers(7).addLuckynumbers(4).addToys("car").build();
+    AList.Builder aListBuild = AList.newBuilder();
+    AList aList = aListBuild.addAge(2).addAge(3).addThings(aThing).build();
+
+    BytesWritable key = new BytesWritable();
+    BytesWritable value = new BytesWritable();
+    ByteArrayOutputStream s = new ByteArrayOutputStream();
+    aList.writeTo(s);
+
+
+    ByteArrayOutputStream t = new ByteArrayOutputStream();
+    aList.writeTo(t);
+
+    key.set(s.toByteArray(), 0, s.size());
+    value.set(t.toByteArray(), 0, t.size());
+    w.append(key, value);
+    w.close();
+
+        String jarFile;
+    jarFile = KVAsVSeqFileBinaryInputFormat.class.getProtectionDomain().getCodeSource().getLocation().getFile();
+
+    System.out.println("set hive.aux.jars.path=file:///"+jarFile);
+
+    client.execute("add jar " + jarFile);
+    client.execute("set hive.aux.jars.path=file:///"+jarFile);
+
+    client.execute("create table  nada   "
+            + " ROW FORMAT SERDE '" + ProtobufDeserializer.class.getName() + "'"
+            //+ " WITH SERDEPROPERTIES ('KEY_SERIALIZE_CLASS'='" + Ex.AList.class.getName()
+            //+ "','VALUE_SERIALIZE_CLASS'='" + Ex.AList.class.getName() + "'   )"
+            + " STORED AS INPUTFORMAT '" + KVAsVSeqFileBinaryInputFormat.class.getName() + "'"
+            + " OUTPUTFORMAT '" + SequenceFileOutputFormat.class.getName() + "'");
+
+    client.execute("load data local inpath '" + p.toString() + "' into table nada");
+    client.execute("SELECT key FROM nada");
+
+    List<String> results = client.fetchAll();
+    String expected="null";
+    //expected = "{\"agecount\":2,\"agelist\":[2,3],\"thingscount\":1,\"thingslist\":[{\"luckynumberscount\":2,\"luckynumberslist\":[7,4],\"toyscount\":1,\"toyslist\":[\"car\"]}]}";
+    Assert.assertEquals(expected, results.get(0));
+    client.execute("drop table nada");
 
   }
 
