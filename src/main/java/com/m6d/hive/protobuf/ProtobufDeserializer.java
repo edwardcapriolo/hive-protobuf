@@ -290,6 +290,12 @@ public class ProtobufDeserializer implements Deserializer{
       if (!m.getName().startsWith("get")) {
         continue;
       }
+      if ( m.getParameterTypes().length != 0) {
+        continue;
+      }
+      if (m.getReturnType() == null) {
+        continue;
+      }
       if (m.getName().equals("getDefaultInstance")) {
         continue;
       }
@@ -299,15 +305,11 @@ public class ProtobufDeserializer implements Deserializer{
       if (m.getName().equalsIgnoreCase("getSerializedSize")) {
     	continue;
       }
-      if ( m.getParameterTypes().length != 0) {
-        continue;
-      }
+      
       if (m.getReturnType().getName().contains("Descriptor")) {
         continue;
       }
-      if (m.getReturnType() == null) {
-        continue;
-      }
+      
       if (m.getReturnType().isPrimitive() || m.getReturnType().equals(String.class)) {
         columnNames.add(m.getName().substring(3));
         columnTypes.add(TypeInfoFactory.getPrimitiveTypeInfoFromJavaPrimitive(m.getReturnType()));
