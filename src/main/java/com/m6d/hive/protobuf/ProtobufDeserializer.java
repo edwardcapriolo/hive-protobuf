@@ -57,6 +57,11 @@ public class ProtobufDeserializer implements Deserializer{
   public static final String KEY_SERIALIZE_CLASS="KEY_SERIALIZE_CLASS";
   public static final String VALUE_SERIALIZE_CLASS="VALUE_SERIALIZE_CLASS";
 
+  public static final String KEY = "key";
+  public static final String VALUE = "value";
+  public static final String UNDEFINED="undefined";
+  public static final String PARSE_FROM="parseFrom";
+
   Class<?> keyClass;
   Class<?> valueClass;
 
@@ -88,12 +93,12 @@ public class ProtobufDeserializer implements Deserializer{
       String keyClassName = tbl.getProperty(KEY_SERIALIZE_CLASS);
       if (keyClassName != null){
         keyClass = job.getClassByName(keyClassName);
-        parseFrom = keyClass.getMethod("parseFrom", parameters);
+        parseFrom = keyClass.getMethod(PARSE_FROM, parameters);
       }
       String valueClassName = tbl.getProperty(VALUE_SERIALIZE_CLASS);
       if (valueClassName != null ){
         valueClass = job.getClassByName(valueClassName);
-        vparseFrom = valueClass.getMethod("parseFrom", parameters);
+        vparseFrom = valueClass.getMethod(PARSE_FROM, parameters);
       }
       this.oi= buildObjectInspector();
     } catch (Exception ex) {
@@ -175,17 +180,11 @@ public class ProtobufDeserializer implements Deserializer{
            Object listObject = reflectGet(proto,columnNames.get(i));
            ListObjectInspector li = (ListObjectInspector) ois.get(i);
            ObjectInspector subOi =li.getListElementObjectInspector();
-           //System.out.println( "column name "+ columnNames.get(i) ); 
-           //System.out.println(" column type "+li.getTypeName());
            if (subOi.getCategory()==Category.PRIMITIVE){
-             //System.out.println(" primative");
              row.add(listObject);
-             //TODO: current units do not cover this
            }
            if (subOi.getCategory() == Category.STRUCT) {
-             //System.out.println(" struct");
              List x = (List) listObject;
-
              StructObjectInspector soi = (StructObjectInspector) subOi;
              List<? extends StructField> substructs = soi.getAllStructFieldRefs();
              List<String> subCols = new ArrayList<String>();
@@ -197,7 +196,6 @@ public class ProtobufDeserializer implements Deserializer{
              List arrayOfStruct = new ArrayList();
              for (int it=0;it<x.size();it++){
                 List<Object> subList = new ArrayList<Object>();
-                //matchProtoToRow(x.get(i),subList,subOis,subCols);
                 matchProtoToRow(x.get(it),subList,subOis,subCols);
                 arrayOfStruct.add(subList);
              }
@@ -233,8 +231,8 @@ public class ProtobufDeserializer implements Deserializer{
 
   public ObjectInspector buildObjectInspector(){
     List<String> columnNames = new ArrayList<String>();
-    columnNames.add("key");
-    columnNames.add("value");
+    columnNames.add(KEY);
+    columnNames.add(VALUE);
     List<ObjectInspector> columnOIs = new ArrayList<ObjectInspector>();
 
     keyColumnNames = new ArrayList<String>();
@@ -243,7 +241,7 @@ public class ProtobufDeserializer implements Deserializer{
     if (this.parseFrom != null){
       populateTypeInfoForClass(this.keyClass, keyColumnNames,keyColumnTypes,0 );
     } else {
-      keyColumnNames.add("undefined");
+      keyColumnNames.add(UNDEFINED);
       keyColumnTypes.add(TypeInfoFactory.booleanTypeInfo);
     }
     //keyOIs = new ArrayList<ObjectInspector>();
@@ -257,7 +255,7 @@ public class ProtobufDeserializer implements Deserializer{
     if (this.vparseFrom != null){
       populateTypeInfoForClass(this.valueClass,valueColumnNames,valueColumnTypes,0);
     } else {
-      valueColumnNames.add("undefined");
+      valueColumnNames.add(UNDEFINED);
       valueColumnTypes.add(TypeInfoFactory.booleanTypeInfo);
     }
     //valueOIs = new ArrayList<ObjectInspector>();
@@ -319,6 +317,7 @@ public class ProtobufDeserializer implements Deserializer{
       if (m.getName().contains("OrBuilderList")){
         continue;
       }
+      
 
       // list
       if (isaList(m.getReturnType())){
@@ -437,12 +436,7 @@ public class ProtobufDeserializer implements Deserializer{
 
       f = m.getDescriptorForType().findFieldByName(prop);
       if (f==null){
-        //System.out.println("descriptor not found");
-        /*for (FieldDescriptor fi: m.getDescriptorForType().getFields()){
-          System.out.println( fi.getName() );
-        }*/
       } else {
-        //System.out.println("found descriptor ");
       }
       this.protoCache.put(cm, f);
     }
@@ -482,14 +476,15 @@ public class ProtobufDeserializer implements Deserializer{
   public boolean isaList(Class<?> c) {
     //seems like it should work (but don't)
     // Assert.assertEquals(true,l.getClass().isAssignableFrom(List.class));
-    boolean match = false;
-    if (c.equals(java.util.List.class)) {
+
+    if (c.equals(java.util.ArrayList.class)) {
+      return true;
+    } else if (c.equals(java.util.List.class)) {
       return true;
     } else if (c.equals(java.util.Collection.class)) {
       return true;
-    } if (c.equals(java.util.ArrayList.class)) {
-      return true;
+    } else {
+      return false;
     }
-    return match;
   }
 }
