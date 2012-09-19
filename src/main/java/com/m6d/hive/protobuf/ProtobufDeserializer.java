@@ -48,6 +48,8 @@ import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Writable;
 
 import com.google.protobuf.GeneratedMessage;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 
 //import prototest.Ex;
 
@@ -74,6 +76,7 @@ public class ProtobufDeserializer implements Deserializer{
   List<ObjectInspector> keyOIs = new ArrayList<ObjectInspector>();
   List<ObjectInspector> valueOIs = new ArrayList<ObjectInspector>();
   Class[] parameters = new Class[]{ new byte[0].getClass() };
+  //Class[] parameters = new Class[] { InputStream.class };
 
   Map<ClassMethod,Method> cached= new HashMap<ClassMethod,Method>();
 
@@ -131,11 +134,13 @@ public class ProtobufDeserializer implements Deserializer{
       if (parseFrom != null) {
         byte [] b = new byte [key.getLength()];
         System.arraycopy(key.getBytes(), 0, b, 0, key.getLength());
+        //ByteArrayInputStream b = new ByteArrayInputStream(key.getBytes(),0,key.getLength());
         parsedResult = parseFrom.invoke(null, b);
       }
       if (vparseFrom != null) {
         byte [] c = new byte [ value.getLength()];
         System.arraycopy(value.getBytes(), 0, c, 0, value.getLength());
+        //ByteArrayInputStream c = new ByteArrayInputStream(value.getBytes(),0,value.getLength());
         vparsedResult = vparseFrom.invoke(null, c);
       }
     } catch (IllegalAccessException ex) {
@@ -152,14 +157,22 @@ public class ProtobufDeserializer implements Deserializer{
     row.clear();
     keyRow.clear();
     if (parseFrom !=null){
-      this.matchProtoToRow(parsedResult, keyRow, keyOIs, keyColumnNames);
+      try {
+        this.matchProtoToRow(parsedResult, keyRow, keyOIs, keyColumnNames);
+      } catch (Exception ex) {
+        throw new SerDeException(ex);
+      }
       row.add(keyRow);
     } else {
       row.add(null);
     }
     valueRow.clear();
     if (vparseFrom !=null){
-      this.matchProtoToRow(vparsedResult, valueRow, valueOIs, valueColumnNames);
+      try {
+        this.matchProtoToRow(vparsedResult, valueRow, valueOIs, valueColumnNames);
+      } catch (Exception ex) {
+        throw new SerDeException(ex);
+      }
       row.add(valueRow);
     } else {
       row.add(null);
@@ -168,7 +181,7 @@ public class ProtobufDeserializer implements Deserializer{
   }
 
   public void matchProtoToRow(Object proto, List<Object> row,
-          List<ObjectInspector> ois, List<String> columnNames) {
+          List<ObjectInspector> ois, List<String> columnNames) throws Exception{
       for (int i = 0;i<columnNames.size();i++){
        switch (ois.get(i).getCategory()){
          case PRIMITIVE:
@@ -404,7 +417,7 @@ public class ProtobufDeserializer implements Deserializer{
 
 
 
-  public Object protoGet(Object o , String prop){
+  public Object protoGet(Object o , String prop) throws Exception{
     //System.out.println("prop "+prop);
     prop = prop.toLowerCase();
     if (prop.equals("serializedsize")){
@@ -417,7 +430,7 @@ public class ProtobufDeserializer implements Deserializer{
 
   Map<ClassMethod,FieldDescriptor> protoCache= new HashMap<ClassMethod,FieldDescriptor>();
 
-  public Object protoCacheGet(Object o, String prop){
+  public Object protoCacheGet(Object o, String prop) throws Exception{
     prop = prop.toLowerCase();
     if (prop.equals("serializedsize")){
       return reflectGet(o,prop);
@@ -426,6 +439,7 @@ public class ProtobufDeserializer implements Deserializer{
       return reflectGet(o,prop);
     }
     GeneratedMessage m = (GeneratedMessage) o;
+
     StringBuilder sb = new StringBuilder();
     sb.append("get");
     sb.append(prop);
@@ -444,7 +458,7 @@ public class ProtobufDeserializer implements Deserializer{
 
   }
   
-  public Object reflectGet(Object o, String prop) {
+  public Object reflectGet(Object o, String prop) throws Exception{
 
     Method m = null;
     Object result = null;
@@ -453,7 +467,7 @@ public class ProtobufDeserializer implements Deserializer{
     sb.append(prop);
     ClassMethod cm = new ClassMethod(o.getClass(),sb.toString());
     m = this.cached.get(cm);
-    try {
+    //try {
       //arge hive columns not case sensative
       //m = o.getClass().getMethod("get"+prop, new Class [0]);
       if (m==null){
@@ -466,9 +480,9 @@ public class ProtobufDeserializer implements Deserializer{
         this.cached.put(cm, m);
       }
       result = m.invoke(o, new Object[0]);
-    } catch (Exception ex){
-      throw new RuntimeException (ex);
-    }
+    //} catch (Exception ex){
+    //  throw new RuntimeException (ex);
+    //}
     return result;
   }
 
