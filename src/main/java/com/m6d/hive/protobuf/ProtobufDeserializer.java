@@ -228,19 +228,23 @@ public class ProtobufDeserializer implements Deserializer{
            break;
          case STRUCT:
            //row.add(null);
-           Object subObject =reflectGet(proto,columnNames.get(i));
-           List<Object> subList = new ArrayList<Object>();
-           StructObjectInspector so = (StructObjectInspector) ois.get(i);
-           List<? extends StructField> substructs = so.getAllStructFieldRefs();
-           List<String> subCols = new ArrayList<String>();
-           List<ObjectInspector> subOis = new ArrayList<ObjectInspector>();
-           for (StructField s : substructs){
-             subCols.add(s.getFieldName());
-             subOis.add(s.getFieldObjectInspector());
+           if (this.reflectHas(proto,columnNames.get(i))){
+             Object subObject =reflectGet(proto,columnNames.get(i));
+             List<Object> subList = new ArrayList<Object>();
+             StructObjectInspector so = (StructObjectInspector) ois.get(i);
+             List<? extends StructField> substructs = so.getAllStructFieldRefs();
+             List<String> subCols = new ArrayList<String>();
+             List<ObjectInspector> subOis = new ArrayList<ObjectInspector>();
+             for (StructField s : substructs){
+               subCols.add(s.getFieldName());
+               subOis.add(s.getFieldObjectInspector());
+             }
+             matchProtoToRow(subObject,subList,subOis,subCols);
+
+             row.add(subList);
+           } else {
+             row.add( null);
            }
-           matchProtoToRow(subObject,subList,subOis,subCols);
-           
-           row.add(subList);
            break;
        }
 

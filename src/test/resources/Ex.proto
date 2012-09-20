@@ -24,3 +24,23 @@ message AList {
  repeated int32 age = 1;
  repeated AThing things = 2;
 }
+
+message TireMaker {
+  optional string maker = 1;
+  optional int32 price = 2;
+}
+
+message Tire {
+  optional int32 tirePressure = 1;
+  optional TireMaker tireMaker = 2;
+}
+
+message Accessory {
+  optional string name = 1;
+  optional string value = 2;
+}
+
+message Car {
+  repeated Tire tires = 1;
+  repeated Accessory accessories = 2; 
+} 
