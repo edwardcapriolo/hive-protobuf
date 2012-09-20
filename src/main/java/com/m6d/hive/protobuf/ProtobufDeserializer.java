@@ -48,6 +48,7 @@ import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Writable;
 
 import com.google.protobuf.GeneratedMessage;
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 
@@ -79,6 +80,7 @@ public class ProtobufDeserializer implements Deserializer{
   //Class[] parameters = new Class[] { InputStream.class };
 
   Map<ClassMethod,Method> cached= new HashMap<ClassMethod,Method>();
+    Map<ClassMethod,Method> cachedHas= new HashMap<ClassMethod,Method>();
 
   Method parseFrom = null;
   Method vparseFrom = null;
@@ -185,35 +187,43 @@ public class ProtobufDeserializer implements Deserializer{
       for (int i = 0;i<columnNames.size();i++){
        switch (ois.get(i).getCategory()){
          case PRIMITIVE:
-           row.add(reflectGet(proto,columnNames.get(i)));
-           //row.add(this.protoGet(proto, columnNames.get(i)));
-           //row.add( this.protoCacheGet(proto, columnNames.get(i)) );
+           if (this.reflectHas(proto,columnNames.get(i))){
+             row.add(reflectGet(proto,columnNames.get(i)));
+           } else {
+             row.add(null);
+           }
            break;
          case LIST:
-           Object listObject = reflectGet(proto,columnNames.get(i));
-           ListObjectInspector li = (ListObjectInspector) ois.get(i);
-           ObjectInspector subOi =li.getListElementObjectInspector();
-           if (subOi.getCategory()==Category.PRIMITIVE){
-             row.add(listObject);
-           }
-           if (subOi.getCategory() == Category.STRUCT) {
-             List x = (List) listObject;
-             StructObjectInspector soi = (StructObjectInspector) subOi;
-             List<? extends StructField> substructs = soi.getAllStructFieldRefs();
-             List<String> subCols = new ArrayList<String>();
-             List<ObjectInspector> subOis = new ArrayList<ObjectInspector>();
-             for (StructField s : substructs) {
-               subCols.add(s.getFieldName());
-               subOis.add(s.getFieldObjectInspector());
+           //there is no hasList in proto a null list is an empty list
+           //if (this.reflectHas(proto,columnNames.get(i))){
+             Object listObject = reflectGet(proto,columnNames.get(i));
+             ListObjectInspector li = (ListObjectInspector) ois.get(i);
+             ObjectInspector subOi =li.getListElementObjectInspector();
+             if (subOi.getCategory()==Category.PRIMITIVE){
+               row.add(listObject);
+             } else if (subOi.getCategory() == Category.STRUCT) {
+               List x = (List) listObject;
+               StructObjectInspector soi = (StructObjectInspector) subOi;
+               List<? extends StructField> substructs = soi.getAllStructFieldRefs();
+               List<String> subCols = new ArrayList<String>();
+               List<ObjectInspector> subOis = new ArrayList<ObjectInspector>();
+               for (StructField s : substructs) {
+                 subCols.add(s.getFieldName());
+                 subOis.add(s.getFieldObjectInspector());
+               }
+               List arrayOfStruct = new ArrayList();
+               for (int it=0;it<x.size();it++){
+                  List<Object> subList = new ArrayList<Object>();
+                  matchProtoToRow(x.get(it),subList,subOis,subCols);
+                  arrayOfStruct.add(subList);
+               }
+               row.add(arrayOfStruct);
+             } else {
+               //never should happen
+               //probably should assert
+               //i dont like assert
              }
-             List arrayOfStruct = new ArrayList();
-             for (int it=0;it<x.size();it++){
-                List<Object> subList = new ArrayList<Object>();
-                matchProtoToRow(x.get(it),subList,subOis,subCols);
-                arrayOfStruct.add(subList);
-             }
-             row.add(arrayOfStruct);
-           }
+           
            //here
            break;
          case STRUCT:
@@ -364,7 +374,7 @@ public class ProtobufDeserializer implements Deserializer{
           TypeInfo build = TypeInfoFactory.getStructTypeInfo(subColumnNames, subColumnTypes);
           columnTypes.add(TypeInfoFactory.getListTypeInfo(build));
         }
-        //  handle nested list
+        //  handle nested list // not possible with protobuf
       }
 
       if ( m.getReturnType().getSuperclass() != null){
@@ -457,7 +467,41 @@ public class ProtobufDeserializer implements Deserializer{
     return m.getField(f);
 
   }
-  
+
+  public boolean reflectHas(Object o, String prop) {
+    Method m = null;
+    Object result = null;
+    StringBuilder sb = new StringBuilder();
+    sb.append("has");
+    sb.append(prop);
+    ClassMethod cm = new ClassMethod(o.getClass(),sb.toString());
+    m = this.cachedHas.get(cm);
+
+    if (m==null){
+      Method [] methods = o.getClass().getMethods();
+       for ( int i=0;i<methods.length; i++){
+        if (methods[i].getName().equalsIgnoreCase(sb.toString())){
+          m = methods[i];
+        }
+      }
+    }
+    //Methods like xCount (which need to be removed) are artifically generated
+    //thus we say they always exist for now
+    if (m == null){
+      return true;
+    } else {
+      this.cachedHas.put(cm,m);
+      try {
+        result = m.invoke(o, new Object[0]);
+      } catch (Exception ex){
+        throw new RuntimeException(ex);
+      }
+      return (Boolean.TRUE.equals(result));
+    }
+  }
+
+
+
   public Object reflectGet(Object o, String prop) throws Exception{
 
     Method m = null;

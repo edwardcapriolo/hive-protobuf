@@ -305,6 +305,70 @@ public class TestProto extends HiveTestService {
 
   }
 
+  public void testWithHas() throws Exception {
+      Path p = new Path(ROOT_DIR, "nulstuff");
+    SequenceFile.Writer w = SequenceFile.createWriter(this.getFileSystem(),
+            new Configuration(), p, BytesWritable.class, BytesWritable.class);
+
+    Ex.Person.Builder personBuilder = Ex.Person.newBuilder();
+    Ex.AddressBook.Builder addressBuilder = Ex.AddressBook.newBuilder();
+
+
+    //here we set pete's name but not his optional email
+
+    Hobby.Builder h = Hobby.newBuilder();
+    h.setName("tanning");
+    Person pete = personBuilder
+            .setId(4).setName("pete").build();
+    Person stan = personBuilder.clear().setEmail("stan@prodigy.net")
+            .setId(10).setName("stan").setHobby(h.build()).build();
+    AddressBook b = addressBuilder.addPerson(pete).addPerson(stan).build();
+
+    BytesWritable key = new BytesWritable();
+    BytesWritable value = new BytesWritable();
+    ByteArrayOutputStream s = new ByteArrayOutputStream();
+    b.writeTo(s);
+    ByteArrayOutputStream t = new ByteArrayOutputStream();
+    b.writeTo(t);
+    key.set(s.toByteArray(), 0, s.size());
+    value.set(t.toByteArray(), 0, t.size());
+    w.append(key, value);
+
+    w.close();
+
+       String jarFile;
+    jarFile = KVAsVSeqFileBinaryInputFormat.class.getProtectionDomain().getCodeSource().getLocation().getFile();
+
+    System.out.println("set hive.aux.jars.path=file:///"+jarFile);
+
+    client.execute("add jar " + jarFile);
+    client.execute("set hive.aux.jars.path=file:///"+jarFile);
+
+
+    client.execute("create table  nulstuf   "
+            + " ROW FORMAT SERDE '" + ProtobufDeserializer.class.getName() + "'"
+            + " WITH SERDEPROPERTIES ('KEY_SERIALIZE_CLASS'='" + Ex.AddressBook.class.getName()
+            + "','VALUE_SERIALIZE_CLASS'='" + Ex.AddressBook.class.getName() + "'   )"
+            + " STORED AS INPUTFORMAT '" + KVAsVSeqFileBinaryInputFormat.class.getName() + "'"
+            + " OUTPUTFORMAT '" + SequenceFileOutputFormat.class.getName() + "'");
+
+    client.execute("load data local inpath '" + p.toString() + "' into table nulstuf");
+    client.execute("SELECT key from nulstuf ");
+
+
+    List<String> results = client.fetchAll();
+    //String expectedResuls = "{\"personcount\":2,\"personlist\":[{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"\"},\"id\":10,\"name\":\"stan\"},{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"\"},\"id\":10,\"name\":\"stan\"}]}";
+
+    String expectedResuls="{\"personcount\":2,\"personlist\":[{\"email\":null,\"hobby\":null,\"id\":4,\"name\":\"pete\"},{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"tanning\"},\"id\":10,\"name\":\"stan\"}]}";
+    //String expectedResuls= "";
+    System.out.println(results.get(0));
+    Assert.assertEquals(expectedResuls, results.get(0));
+
+    client.execute("Drop table nulstuf");
+
+
+  }
+
   public void testListWithAddressBook() throws Exception {
     Path p = new Path(ROOT_DIR, "addressbook");
     SequenceFile.Writer w = SequenceFile.createWriter(this.getFileSystem(),
@@ -318,6 +382,7 @@ public class TestProto extends HiveTestService {
     Person stan = personBuilder.clear().setEmail("stan@prodigy.net")
             .setId(10).setName("stan").build();
     AddressBook b = addressBuilder.addPerson(pete).addPerson(stan).build();
+    
 
     BytesWritable key = new BytesWritable();
     BytesWritable value = new BytesWritable();
@@ -353,7 +418,7 @@ public class TestProto extends HiveTestService {
     List<String> results = client.fetchAll();
     //String expectedResuls = "{\"personcount\":2,\"personlist\":[{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"\"},\"id\":10,\"name\":\"stan\"},{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"\"},\"id\":10,\"name\":\"stan\"}]}";
 
-    String expectedResuls="{\"personcount\":2,\"personlist\":[{\"email\":\"pete@aol.com\",\"hobby\":{\"name\":\"\"},\"id\":4,\"name\":\"pete\"},{\"email\":\"stan@prodigy.net\",\"hobby\":{\"name\":\"\"},\"id\":10,\"name\":\"stan\"}]}";
+    String expectedResuls="{\"personcount\":2,\"personlist\":[{\"email\":\"pete@aol.com\",\"hobby\":null,\"id\":4,\"name\":\"pete\"},{\"email\":\"stan@prodigy.net\",\"hobby\":null,\"id\":10,\"name\":\"stan\"}]}";
     //String expectedResuls= "";
     Assert.assertEquals(expectedResuls, results.get(0));
 
