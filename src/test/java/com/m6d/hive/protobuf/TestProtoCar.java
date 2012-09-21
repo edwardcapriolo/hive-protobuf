@@ -26,6 +26,7 @@ import prototest.Ex.Car;
 import prototest.Ex.Hobby;
 import prototest.Ex.Person;
 import prototest.Ex.Tire;
+import prototest.Ex.TireMaker;
 
 
 public class TestProtoCar extends HiveTestService{
@@ -127,5 +128,56 @@ public class TestProtoCar extends HiveTestService{
     client.execute("drop table "+table);
 
   }
+
+
+   public void testWithTireMaker() throws Exception {
+    String table="nulltire";
+        Path p = new Path(this.ROOT_DIR, table);
+    SequenceFile.Writer w = SequenceFile.createWriter(this.getFileSystem(),
+            new Configuration(), p, BytesWritable.class, BytesWritable.class);
+    TireMaker.Builder maker = TireMaker.newBuilder();
+    maker.setMaker("badyear");
+    Car.Builder car = Car.newBuilder();
+    Tire.Builder tire = Tire.newBuilder();
+    car.addTires(tire.setTireMaker(maker.build()).build());
+
+    BytesWritable key = new BytesWritable();
+    BytesWritable value = new BytesWritable();
+    ByteArrayOutputStream s = new ByteArrayOutputStream();
+    car.build().writeTo(s);
+
+    ByteArrayOutputStream t = new ByteArrayOutputStream();
+
+    key.set(s.toByteArray(), 0, s.size());
+    value.set(t.toByteArray(), 0, t.size());
+    w.append(key, value);
+    w.close();
+
+    String jarFile;
+    jarFile = KVAsVSeqFileBinaryInputFormat.class.getProtectionDomain().getCodeSource().getLocation().getFile();
+
+    client.execute("add jar " + jarFile);
+    client.execute("set hive.aux.jars.path=file:///"+jarFile);
+
+    client.execute("create table     "+table+" "
+            + " ROW FORMAT SERDE '" + ProtobufDeserializer.class.getName() + "'"
+            + " WITH SERDEPROPERTIES ('KEY_SERIALIZE_CLASS'='" + Ex.Car.class.getName()
+            + "'   )"
+            + " STORED AS INPUTFORMAT '" + KVAsVSeqFileBinaryInputFormat.class.getName() + "'"
+            + " OUTPUTFORMAT '" + SequenceFileOutputFormat.class.getName() + "'");
+
+    client.execute("load data local inpath '" + p.toString() + "' into table "+table+" ");
+    client.execute("SELECT key FROM "+table);
+
+    List<String> results = client.fetchAll();
+
+    String expected="{\"accessoriescount\":0,\"accessorieslist\":[],\"tirescount\":1,\"tireslist\":[{\"tiremaker\":{\"maker\":\"badyear\",\"price\":null},\"tirepressure\":null}]}";
+    Assert.assertEquals(expected, results.get(0));
+    client.execute("drop table "+table);
+
+  }
+
+
+
 
 }
