@@ -48,9 +48,8 @@ import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Writable;
 
 import com.google.protobuf.GeneratedMessage;
-import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
+import com.google.protobuf.Message;
+
 
 //import prototest.Ex;
 
@@ -77,10 +76,12 @@ public class ProtobufDeserializer implements Deserializer{
   List<ObjectInspector> keyOIs = new ArrayList<ObjectInspector>();
   List<ObjectInspector> valueOIs = new ArrayList<ObjectInspector>();
   Class[] parameters = new Class[]{ new byte[0].getClass() };
-  //Class[] parameters = new Class[] { InputStream.class };
 
   Map<ClassMethod,Method> cached= new HashMap<ClassMethod,Method>();
-    Map<ClassMethod,Method> cachedHas= new HashMap<ClassMethod,Method>();
+  Map<ClassMethod,Method> cachedHas= new HashMap<ClassMethod,Method>();
+  Map<ClassMethod,FieldDescriptor> protoCache= new HashMap<ClassMethod,FieldDescriptor>();
+  Map<ClassMethod,FieldDescriptor> protoHasCache= new HashMap<ClassMethod,FieldDescriptor>();
+
 
   Method parseFrom = null;
   Method vparseFrom = null;
@@ -88,7 +89,7 @@ public class ProtobufDeserializer implements Deserializer{
   List<Object> row = new ArrayList<Object>();
   List<Object> keyRow = new ArrayList<Object>();
   List<Object> valueRow = new ArrayList<Object>();
-
+  
   public ProtobufDeserializer() {
   }
 
@@ -136,13 +137,11 @@ public class ProtobufDeserializer implements Deserializer{
       if (parseFrom != null) {
         byte [] b = new byte [key.getLength()];
         System.arraycopy(key.getBytes(), 0, b, 0, key.getLength());
-        //ByteArrayInputStream b = new ByteArrayInputStream(key.getBytes(),0,key.getLength());
         parsedResult = parseFrom.invoke(null, b);
       }
       if (vparseFrom != null) {
         byte [] c = new byte [ value.getLength()];
         System.arraycopy(value.getBytes(), 0, c, 0, value.getLength());
-        //ByteArrayInputStream c = new ByteArrayInputStream(value.getBytes(),0,value.getLength());
         vparsedResult = vparseFrom.invoke(null, c);
       }
     } catch (IllegalAccessException ex) {
@@ -152,9 +151,6 @@ public class ProtobufDeserializer implements Deserializer{
     } catch (InvocationTargetException ex) {
       throw new SerDeException(ex.getMessage(), ex);
     }
-
-    //key struct<name:string,id:int,email:string,hobby:struct<name:string,serializedsize:int>> from deserializer,
-    //value struct<name:string,id:int,email:string,hobby:struct<name:string,serializedsize:int>,serializedsize:int> from deserializer
 
     row.clear();
     keyRow.clear();
@@ -184,19 +180,32 @@ public class ProtobufDeserializer implements Deserializer{
 
   public void matchProtoToRow(Object proto, List<Object> row,
           List<ObjectInspector> ois, List<String> columnNames) throws Exception{
+     Message m =(Message) proto;
       for (int i = 0;i<columnNames.size();i++){
        switch (ois.get(i).getCategory()){
          case PRIMITIVE:
+
            if (this.reflectHas(proto,columnNames.get(i))){
              row.add(reflectGet(proto,columnNames.get(i)));
            } else {
-             row.add(null);
+              row.add(null);
            }
+           /*
+            * This is the protobuf alternative to reflection
+            * (Did not find it to be significantly faster)
+           if (this.protoHas(m,columnNames.get(i))){
+             //row.add(reflectGet(proto,columnNames.get(i)));
+             //row.add(this.protoGet(proto, columnNames.get(i)));
+             row.add(this.protoCacheGet(m, columnNames.get(i)));
+           } else {
+             row.add(null);
+           }*/
            break;
          case LIST:
-           //there is no hasList in proto a null list is an empty list
-           //if (this.reflectHas(proto,columnNames.get(i))){
-             Object listObject = reflectGet(proto,columnNames.get(i));
+           /* there is no hasList in proto a null list is an empty list.
+            * no need to call hasX
+           */
+           Object listObject = reflectGet(m,columnNames.get(i));
              ListObjectInspector li = (ListObjectInspector) ois.get(i);
              ObjectInspector subOi =li.getListElementObjectInspector();
              if (subOi.getCategory()==Category.PRIMITIVE){
@@ -227,7 +236,9 @@ public class ProtobufDeserializer implements Deserializer{
            //here
            break;
          case STRUCT:
-           //row.add(null);
+           /* Alternative protobuf implementation 
+            if (this.protoHas(m,columnNames.get(i))){
+             Object subObject =protoCacheGet(m,columnNames.get(i)); */
            if (this.reflectHas(proto,columnNames.get(i))){
              Object subObject =reflectGet(proto,columnNames.get(i));
              List<Object> subList = new ArrayList<Object>();
@@ -240,14 +251,12 @@ public class ProtobufDeserializer implements Deserializer{
                subOis.add(s.getFieldObjectInspector());
              }
              matchProtoToRow(subObject,subList,subOis,subCols);
-
              row.add(subList);
            } else {
              row.add( null);
            }
            break;
        }
-
      }
   }
 
@@ -442,37 +451,36 @@ public class ProtobufDeserializer implements Deserializer{
     return m.getField( m.getDescriptorForType().findFieldByName(prop) );
   }
 
-  Map<ClassMethod,FieldDescriptor> protoCache= new HashMap<ClassMethod,FieldDescriptor>();
-
-  public Object protoCacheGet(Object o, String prop) throws Exception{
+  public Object protoCacheGet(Message m, String prop) throws Exception{
     prop = prop.toLowerCase();
-    if (prop.equals("serializedsize")){
-      return reflectGet(o,prop);
-    }
     if (prop.endsWith("count")){
-      return reflectGet(o,prop);
+      return reflectGet(m,prop);
     }
-    GeneratedMessage m = (GeneratedMessage) o;
-
-    StringBuilder sb = new StringBuilder();
-    sb.append("get");
-    sb.append(prop);
-    ClassMethod cm = new ClassMethod(o.getClass(),sb.toString());
+    ClassMethod cm = new ClassMethod(m.getClass(),prop);
     FieldDescriptor f =this.protoCache.get(cm);
     if (f == null){
-      //System.out.println("prop" + prop);
-
       f = m.getDescriptorForType().findFieldByName(prop);
-      if (f==null){
-      } else {
-      }
       this.protoCache.put(cm, f);
     }
+    
     return m.getField(f);
+  } 
 
+  public boolean protoHas(Message m , String prop) throws Exception {
+    prop=prop.toLowerCase();
+    if (prop.contains("count")){
+      return reflectHas(m,prop);
+    }
+    ClassMethod meth = new ClassMethod(m.getClass(),prop);
+    FieldDescriptor f =protoHasCache.get(meth);
+    if (f == null){
+      f = m.getDescriptorForType().findFieldByName(prop);
+      protoHasCache.put(meth, f);
+    }
+    return m.hasField(f);
   }
-
-  public boolean reflectHas(Object o, String prop) {
+  
+  public boolean reflectHas(Object o, String prop) throws Exception{
     Method m = null;
     Object result = null;
     StringBuilder sb = new StringBuilder();
@@ -495,11 +503,7 @@ public class ProtobufDeserializer implements Deserializer{
       return true;
     } else {
       this.cachedHas.put(cm,m);
-      try {
-        result = m.invoke(o, new Object[0]);
-      } catch (Exception ex){
-        throw new RuntimeException(ex);
-      }
+      result = m.invoke(o, new Object[0]);
       return (Boolean.TRUE.equals(result));
     }
   }
@@ -549,4 +553,7 @@ public class ProtobufDeserializer implements Deserializer{
       return false;
     }
   }
+
+
+
 }
