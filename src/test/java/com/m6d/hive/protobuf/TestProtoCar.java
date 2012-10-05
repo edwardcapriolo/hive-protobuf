@@ -158,19 +158,16 @@ public class TestProtoCar extends HiveTestService{
 
     client.execute("add jar " + jarFile);
     client.execute("set hive.aux.jars.path=file:///"+jarFile);
-
     client.execute("create table     "+table+" "
             + " ROW FORMAT SERDE '" + ProtobufDeserializer.class.getName() + "'"
             + " WITH SERDEPROPERTIES ('KEY_SERIALIZE_CLASS'='" + Ex.Car.class.getName()
             + "'   )"
             + " STORED AS INPUTFORMAT '" + KVAsVSeqFileBinaryInputFormat.class.getName() + "'"
             + " OUTPUTFORMAT '" + SequenceFileOutputFormat.class.getName() + "'");
-
     client.execute("load data local inpath '" + p.toString() + "' into table "+table+" ");
     client.execute("SELECT key FROM "+table);
 
     List<String> results = client.fetchAll();
-
     String expected="{\"accessoriescount\":0,\"accessorieslist\":[],\"tirescount\":1,\"tireslist\":[{\"tiremaker\":{\"maker\":\"badyear\",\"price\":null},\"tirepressure\":null}]}";
     Assert.assertEquals(expected, results.get(0));
     client.execute("drop table "+table);

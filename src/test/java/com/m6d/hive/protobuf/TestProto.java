@@ -240,8 +240,8 @@ public class TestProto extends HiveTestService {
     ProtobufDeserializer de = new ProtobufDeserializer();
     de.keyClass = Ex.AList.class;
     de.valueClass = Ex.AList.class;
-    de.parseFrom = de.keyClass.getMethod("parseFrom", de.parameters);
-    de.vparseFrom = de.valueClass.getMethod("parseFrom", de.parameters);
+    de.parseFrom = de.keyClass.getMethod("parseFrom", de.byteArrayParameters);
+    de.vparseFrom = de.valueClass.getMethod("parseFrom", de.byteArrayParameters);
     Object returnObj = de.deserialize(p);
     ArrayList keyVal = (ArrayList) returnObj;
     System.out.println(keyVal);
@@ -273,8 +273,8 @@ public class TestProto extends HiveTestService {
     ProtobufDeserializer de = new ProtobufDeserializer();
     de.keyClass = Ex.Person.class;
     de.valueClass = Ex.Person.class;
-    de.parseFrom = de.keyClass.getMethod("parseFrom", de.parameters);
-    de.vparseFrom = de.valueClass.getMethod("parseFrom", de.parameters);
+    de.parseFrom = de.keyClass.getMethod("parseFrom", de.byteArrayParameters);
+    de.vparseFrom = de.valueClass.getMethod("parseFrom", de.byteArrayParameters);
 
     Object result = de.deserialize(p);
 
