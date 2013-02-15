@@ -43,6 +43,8 @@ public class TestProtoCar extends HiveTestService{
 
     Car.Builder car = Car.newBuilder();
 
+   //Car.newBuilder().build()
+
     BytesWritable key = new BytesWritable();
     BytesWritable value = new BytesWritable();
     ByteArrayOutputStream s = new ByteArrayOutputStream();
@@ -126,6 +128,7 @@ public class TestProtoCar extends HiveTestService{
     String expected="{\"accessoriescount\":0,\"accessorieslist\":[],\"tirescount\":1,\"tireslist\":[{\"tiremaker\":null,\"tirepressure\":null}]}";
     Assert.assertEquals(expected, results.get(0));
     client.execute("drop table "+table);
+   
 
   }
 

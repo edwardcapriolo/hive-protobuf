@@ -38,7 +38,7 @@ public class LongTest extends HiveTestService {
 
   static java.util.Random r ;
   
-  static int load =10000;
+  static int load =4000;
   
   static {
      r = new java.util.Random(10);
@@ -60,6 +60,57 @@ public class LongTest extends HiveTestService {
 
   }
 
+
+   public void testWriteReadProto() throws Exception {
+    Path p = new Path(this.ROOT_DIR, "reallybigfile2");
+
+
+    SequenceFile.Writer w = SequenceFile.createWriter(this.getFileSystem(),
+            new Configuration(), p, BytesWritable.class, BytesWritable.class,
+            SequenceFile.CompressionType.BLOCK);
+
+    long startLoad = System.currentTimeMillis();
+    int toLoad = load;
+     for (int i = 0; i < toLoad; i++) {
+       Person.Builder bbuild = Person.newBuilder();
+       Person ed = bbuild.setEmail(randomString()).setName(randomString()).
+               setId(randomInt()).setHobby(Hobby.newBuilder().setName(randomString())).build();
+       Person bo = bbuild.setEmail(randomString()).setName(randomString()).
+               setId(randomInt()).setHobby(Hobby.newBuilder().setName(randomString())).build();
+
+      BytesWritable key = new BytesWritable();
+      BytesWritable value = new BytesWritable();
+      ByteArrayOutputStream s = new ByteArrayOutputStream();
+      ed.writeTo(s);
+
+
+      ByteArrayOutputStream t = new ByteArrayOutputStream();
+      bo.writeTo(t);
+
+      key.set(s.toByteArray(), 0, s.size());
+      value.set(t.toByteArray(), 0, t.size());
+      w.append(key, value);
+    }
+    w.close();
+
+    long start = System.currentTimeMillis();
+    SequenceFile.Reader r = new SequenceFile.Reader(this.getFileSystem(), p, this.createJobConf());
+    BytesWritable readkey = new BytesWritable();
+    BytesWritable readval = new BytesWritable();
+    while (r.next(readkey, readval)){
+     byte [] c = new byte [ readkey.getLength()];
+      System.arraycopy(readkey.getBytes(), 0, c, 0, readkey.getLength());
+      Person.parseFrom(c);
+
+           byte [] d = new byte [ readval.getLength()];
+      System.arraycopy(readval.getBytes(), 0, d, 0, readval.getLength());
+      Person.parseFrom(d);
+    }
+    long end = System.currentTimeMillis();
+
+    System.out.println("reading proto took"+ (end-start));
+    r.close();
+  }
   public void testBigProto() throws Exception {
     Path p = new Path(this.ROOT_DIR, "reallybigfile");
 
@@ -67,7 +118,6 @@ public class LongTest extends HiveTestService {
     SequenceFile.Writer w = SequenceFile.createWriter(this.getFileSystem(),
             new Configuration(), p, BytesWritable.class, BytesWritable.class,
             SequenceFile.CompressionType.BLOCK);
-
 
     long startLoad = System.currentTimeMillis();
     int toLoad = load;
@@ -123,7 +173,7 @@ public class LongTest extends HiveTestService {
     Assert.assertEquals(toLoad + "", results.get(0));
     long endQuery = System.currentTimeMillis();
 
-    System.out.println((endQuery - startQuery) + "Query time taken");
+    System.out.println((endQuery - startQuery) + " Proto Query time taken");
     client.execute("drop table bigproto");
 
   }
@@ -169,7 +219,7 @@ public class LongTest extends HiveTestService {
     Assert.assertEquals(toLoad + "", results.get(0));
     long endQuery = System.currentTimeMillis();
 
-    System.out.println((endQuery - startQuery) + "Query time taken");
+    System.out.println((endQuery - startQuery) + " Query time taken");
     client.execute("drop table bigproto");
 
   }
