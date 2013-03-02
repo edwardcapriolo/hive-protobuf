@@ -113,13 +113,19 @@ public class ProtobufDeserializer implements Deserializer{
 
   @Override
   public Object deserialize(Writable field) throws SerDeException {
-    if (!(field instanceof Pair)) {
-      throw new SerDeException("Writable was not an instance of Pair. It was " + field.getClass());
+    //if (!(field instanceof Pair)) {
+    //  throw new SerDeException("Writable was not an instance of Pair. It was " + field.getClass());
+    //}
+    BytesWritable key = null;
+    BytesWritable value = null;
+    if (field instanceof Pair){
+      Pair p = (Pair) field;
+      key = (BytesWritable) p.getKey();
+      value = (BytesWritable) p.getValue();
+    } else if (field instanceof BytesWritable){
+      parseFrom = null;
+      value = (BytesWritable) field;
     }
-    Pair p = (Pair) field;
-    BytesWritable key = (BytesWritable) p.getKey();
-    BytesWritable value = (BytesWritable) p.getValue();
-
     Object parsedResult = null;
     Object vparsedResult = null;
     try {

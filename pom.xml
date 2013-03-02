@@ -4,7 +4,7 @@
   <groupId>com.m6d</groupId>
   <artifactId>hive-protobuf</artifactId>
   <name>hive-protobuf</name>
-  <version>1.0.4-SNAPSHOT</version>
+  <version>1.0.4-ec-remix-SNAPSHOT</version>
   <description>Protobuf support for hive</description>
   <packaging>jar</packaging>
 

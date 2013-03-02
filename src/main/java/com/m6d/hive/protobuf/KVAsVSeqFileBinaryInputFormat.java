@@ -36,91 +36,11 @@ import org.apache.hadoop.mapred.SequenceFileInputFormat;
  * key,value -> ull,pair(key,value)
  */
 public class KVAsVSeqFileBinaryInputFormat 
-        extends SequenceFileInputFormat<NullWritable,Pair> {
+        extends SequenceFileInputFormat {
 
   public KVAsVSeqFileBinaryInputFormat() {
     super();
   }
 
-  public RecordReader<NullWritable,Pair> getRecordReader
-          (InputSplit split, JobConf jobConf, Reporter reporter)
-  throws IOException {
-    return new KVAsVSeqFileBinaryRecordReader(jobConf, (FileSplit) split);
-  }
-
-  public static class KVAsVSeqFileBinaryRecordReader
-          implements RecordReader<NullWritable,Pair> {
-
-    private SequenceFile.Reader in;
-    private long start;
-    private long end;
-    private boolean done = false;
-    private DataOutputBuffer buffer = new DataOutputBuffer();
-    private SequenceFile.ValueBytes vbytes;
-
-    BytesWritable key = new BytesWritable();
-    BytesWritable value = new BytesWritable();
-
-    public KVAsVSeqFileBinaryRecordReader(Configuration conf, FileSplit split)
-    throws IOException {
-      Path path = split.getPath();
-      FileSystem fs = path.getFileSystem(conf);
-      this.in = new SequenceFile.Reader(fs, path, conf);
-      this.end = split.getStart() + split.getLength();
-      if (split.getStart() > in.getPosition()){
-        in.sync(split.getStart());
-      }
-      this.start = in.getPosition();
-      vbytes = in.createValueBytes();
-      done = start >= end;
-    }
-
-    @Override
-    public boolean next(NullWritable k, Pair v) throws IOException {
-      done=in.next(key, value);
-      v.setKey(key);
-      v.setValue(value);
-      return done;
-    }
-
-    @Override
-    public NullWritable createKey() {
-      return NullWritable.get();
-    }
-
-    public String getKeyClassName(){
-      return NullWritable.class.getName();
-    }
-
-    public String getValueClassName(){
-      return Pair.class.getName();
-    }
-
-    @Override
-    public Pair createValue() {
-      return new Pair();
-    }
-
-    @Override
-    public long getPos() throws IOException {
-      return in.getPosition();
-    }
-
-    @Override
-    public void close() throws IOException {
-      in.close();
-    }
-
-    @Override
-    public float getProgress() throws IOException {
-      if (end == start){
-        return 0.0f;
-      } else {
-        return Math.min(1.0f, (float) ((in.getPosition() - start) /
-                (double) (end-start)));
-      }
-    }
-
-  }
-
+  
 }
