@@ -42,5 +42,12 @@ message Accessory {
 
 message Car {
   repeated Tire tires = 1;
-  repeated Accessory accessories = 2; 
+  repeated Accessory accessories = 2;
+  optional Person owner = 3;
+  optional Person driver = 4;
 } 
+
+message Garage {
+  optional string address = 1;
+  repeated Car cars = 2;
+}

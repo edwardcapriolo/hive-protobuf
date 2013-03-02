@@ -15,7 +15,6 @@ limitations under the License.
 */
 package com.m6d.hive.protobuf;
 
-import com.google.protobuf.Descriptors.FieldDescriptor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -25,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
@@ -34,10 +34,10 @@ import org.apache.hadoop.hive.serde2.SerDeException;
 import org.apache.hadoop.hive.serde2.SerDeStats;
 import org.apache.hadoop.hive.serde2.objectinspector.ListObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
+import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector.Category;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory;
 import org.apache.hadoop.hive.serde2.objectinspector.StructField;
 import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
-import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector.Category;
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.hive.serde2.typeinfo.ListTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.PrimitiveTypeInfo;
@@ -47,6 +47,8 @@ import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoFactory;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Writable;
 
+import com.google.common.collect.Sets;
+import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.GeneratedMessage;
 import com.google.protobuf.Message;
 
@@ -60,6 +62,18 @@ public class ProtobufDeserializer implements Deserializer{
   public static final String VALUE = "value";
   public static final String UNDEFINED = "undefined";
   public static final String PARSE_FROM = "parseFrom";
+  
+  private static final class NoSuchMethod {
+	@SuppressWarnings("unused") public final void none() {}
+  }
+  public static final Method NO_SUCH_METHOD; 
+  static {
+	  try {
+		  NO_SUCH_METHOD = NoSuchMethod.class.getDeclaredMethod("none");
+	  } catch(NoSuchMethodException e) {
+		  throw new RuntimeException("Can't happen", e);
+	  }
+  }
 
   Class<?> keyClass;
   Class<?> valueClass;
@@ -73,8 +87,8 @@ public class ProtobufDeserializer implements Deserializer{
   List<ObjectInspector> keyOIs = new ArrayList<ObjectInspector>();
   List<ObjectInspector> valueOIs = new ArrayList<ObjectInspector>();
 
-  Map<ClassMethod,Method> cached= new HashMap<ClassMethod,Method>();
-  Map<ClassMethod,Method> cachedHas= new HashMap<ClassMethod,Method>();
+  Map<Class<?>, Map<String, Method>> cached= new HashMap<Class<?>, Map<String,Method>>();
+  Map<Class<?>, Map<String, Method>> cachedHas= new HashMap<Class<?>, Map<String, Method>>();
   Map<ClassMethod,FieldDescriptor> protoCache= new HashMap<ClassMethod,FieldDescriptor>();
   Map<ClassMethod,FieldDescriptor> protoHasCache= new HashMap<ClassMethod,FieldDescriptor>();
 
@@ -87,7 +101,7 @@ public class ProtobufDeserializer implements Deserializer{
   List<Object> valueRow = new ArrayList<Object>();
 
   public static final Object[] noArgs = new Object [0];
-  public static final Class[] byteArrayParameters = new Class[]{ new byte[0].getClass() };
+  public static final Class<?>[] byteArrayParameters = new Class[]{ new byte[0].getClass() };
   
   public ProtobufDeserializer() { 
   }
@@ -126,18 +140,18 @@ public class ProtobufDeserializer implements Deserializer{
       parseFrom = null;
       value = (BytesWritable) field;
     }
-    Object parsedResult = null;
-    Object vparsedResult = null;
+    Message parsedResult = null;
+    Message vparsedResult = null;
     try {
       if (parseFrom != null) {
         byte [] b = new byte [key.getLength()];
         System.arraycopy(key.getBytes(), 0, b, 0, key.getLength());
-        parsedResult = parseFrom.invoke(null, b);
+        parsedResult = (Message)parseFrom.invoke(null, b);
       }
       if (vparseFrom != null) {
         byte [] c = new byte [ value.getLength()];
         System.arraycopy(value.getBytes(), 0, c, 0, value.getLength());
-        vparsedResult = vparseFrom.invoke(null, c);
+        vparsedResult = (Message)vparseFrom.invoke(null, c);
       }
     } catch (IllegalAccessException ex) {
       throw new SerDeException(ex.getMessage(), ex);
@@ -173,81 +187,70 @@ public class ProtobufDeserializer implements Deserializer{
     return row;
   }
 
-  public void matchProtoToRow(Object proto, List<Object> row,
-          List<ObjectInspector> ois, List<String> columnNames) throws Exception{
-     Message m =(Message) proto;
-      for (int i = 0;i<columnNames.size();i++){
-       switch (ois.get(i).getCategory()){
-         case PRIMITIVE:
-
-           if (this.reflectHas(proto,columnNames.get(i))){
-             row.add(reflectGet(proto,columnNames.get(i)));
-           } else {
-              row.add(null);
-           }
-           /*
-            * This is the protobuf alternative to reflection
-            * (Did not find it to be significantly faster)
-           if (this.protoHas(m,columnNames.get(i))){
-             row.add(this.protoCacheGet(m, columnNames.get(i)));
-           } else {
-             row.add(null);
-           }*/
-           break;
-         case LIST:
-           /* there is no hasList in proto a null list is an empty list.
-            * no need to call hasX
-           */
-           Object listObject = reflectGet(m,columnNames.get(i));
-             ListObjectInspector li = (ListObjectInspector) ois.get(i);
-             ObjectInspector subOi =li.getListElementObjectInspector();
-             if (subOi.getCategory()==Category.PRIMITIVE){
-               row.add(listObject);
-             } else if (subOi.getCategory() == Category.STRUCT) {
-               List x = (List) listObject;
-               StructObjectInspector soi = (StructObjectInspector) subOi;
-               List<? extends StructField> substructs = soi.getAllStructFieldRefs();
-               List<String> subCols = new ArrayList<String>();
-               List<ObjectInspector> subOis = new ArrayList<ObjectInspector>();
-               for (StructField s : substructs) {
-                 subCols.add(s.getFieldName());
-                 subOis.add(s.getFieldObjectInspector());
-               }
-               List arrayOfStruct = new ArrayList();
-               for (int it=0;it<x.size();it++){
-                  List<Object> subList = new ArrayList<Object>();
-                  matchProtoToRow(x.get(it),subList,subOis,subCols);
-                  arrayOfStruct.add(subList);
-               }
-               row.add(arrayOfStruct);
-             } else {
-               //never should happen
-             }
-           break;
-         case STRUCT:
-           /* Alternative protobuf implementation 
-            if (this.protoHas(m,columnNames.get(i))){
-             Object subObject =protoCacheGet(m,columnNames.get(i)); */
-           if (this.reflectHas(proto,columnNames.get(i))){
-             Object subObject =reflectGet(proto,columnNames.get(i));
-             List<Object> subList = new ArrayList<Object>();
-             StructObjectInspector so = (StructObjectInspector) ois.get(i);
-             List<? extends StructField> substructs = so.getAllStructFieldRefs();
-             List<String> subCols = new ArrayList<String>();
-             List<ObjectInspector> subOis = new ArrayList<ObjectInspector>();
-             for (StructField s : substructs){
-               subCols.add(s.getFieldName());
-               subOis.add(s.getFieldObjectInspector());
-             }
-             matchProtoToRow(subObject,subList,subOis,subCols);
-             row.add(subList);
-           } else {
-             row.add( null);
-           }
-           break;
-       }
-     }
+  public void matchProtoToRow(Message proto, List<Object> row, List<ObjectInspector> ois, List<String> columnNames) throws Exception{
+    for (int i = 0;i<columnNames.size();i++) {
+      matchProtoToRowField(proto, row, ois.get(i), columnNames.get(i));
+    }
   }
+  
+  public void matchProtoToRow(Message proto, List<Object> row, List<? extends StructField> structFields) throws Exception {
+	for (int i = 0;i<structFields.size();i++) {
+	  ObjectInspector oi = structFields.get(i).getFieldObjectInspector();
+	  String colName = structFields.get(i).getFieldName();
+	  matchProtoToRowField(proto, row, oi, colName);
+	}
+  }
+  
+  private void matchProtoToRowField(Message m, List<Object> row, ObjectInspector oi, String colName) throws Exception {
+    switch (oi.getCategory()){
+      case PRIMITIVE:
+        if (this.reflectHas(m,colName)){
+          row.add(reflectGet(m,colName));
+        } else {
+          row.add(null);
+        }
+        break;
+      case LIST:
+        /* there is no hasList in proto a null list is an empty list.
+         * no need to call hasX
+        */
+        Object listObject = reflectGet(m,colName);
+        ListObjectInspector li = (ListObjectInspector) oi;
+        ObjectInspector subOi =li.getListElementObjectInspector();
+        if (subOi.getCategory()==Category.PRIMITIVE){
+          row.add(listObject);
+        } else if (subOi.getCategory() == Category.STRUCT) {
+          @SuppressWarnings("unchecked")
+		  List<Message> x = (List<Message>) listObject;
+          StructObjectInspector soi = (StructObjectInspector) subOi;
+          List<? extends StructField> substructs = soi.getAllStructFieldRefs();
+          List<List<?>> arrayOfStruct = new ArrayList<List<?>>(x.size());
+          for (int it=0;it<x.size();it++){
+            List<Object> subList = new ArrayList<Object>(substructs.size());
+            matchProtoToRow(x.get(it),subList,substructs);
+            arrayOfStruct.add(subList);
+          }
+          row.add(arrayOfStruct);
+        } else {
+          //never should happen
+        }
+        break;
+      case STRUCT:
+        if (this.reflectHas(m, colName)){
+          Message subObject = (Message)reflectGet(m, colName);
+          StructObjectInspector so = (StructObjectInspector) oi;
+          List<? extends StructField> substructs = so.getAllStructFieldRefs();
+          List<Object> subList = new ArrayList<Object>(substructs.size());
+          matchProtoToRow(subObject,subList,substructs);
+          row.add(subList);
+        } else {
+          row.add( null);
+        }
+        break;
+    }	  
+  }
+  
+
 
   @Override
   public ObjectInspector getObjectInspector() throws SerDeException {
@@ -262,9 +265,8 @@ public class ProtobufDeserializer implements Deserializer{
 
     keyColumnNames = new ArrayList<String>();
     keyColumnTypes = new ArrayList<TypeInfo>();
-
     if (this.parseFrom != null){
-      populateTypeInfoForClass(this.keyClass, keyColumnNames,keyColumnTypes,0 );
+      populateTypeInfoForClass(this.keyClass, keyColumnNames,keyColumnTypes,0);
     } else {
       keyColumnNames.add(UNDEFINED);
       keyColumnTypes.add(TypeInfoFactory.booleanTypeInfo);
@@ -292,14 +294,14 @@ public class ProtobufDeserializer implements Deserializer{
     columnOIs.add(keyOI);
     columnOIs.add(valueOI);
     
-    ObjectInspector oi = ObjectInspectorFactory.getStandardStructObjectInspector
-            (columnNames,columnOIs);
+    ObjectInspector oi = ObjectInspectorFactory.getStandardStructObjectInspector(columnNames,columnOIs);
     return oi;
   }
 
   public void populateTypeInfoForClass(Class<?> kclass,
           List<String> columnNames,
-          List<TypeInfo> columnTypes, int indent) {
+          List<TypeInfo> columnTypes, 
+          int indent) {
 
     //believe it or not the order is not preserved
     //this could obliterate overloaded methods
@@ -310,7 +312,6 @@ public class ProtobufDeserializer implements Deserializer{
       sortedMethods.put(m.getName(),m);
     }
     
-
     for (Method m : sortedMethods.values()) {
       if (!m.getName().startsWith("get")) {
         continue;
@@ -345,20 +346,16 @@ public class ProtobufDeserializer implements Deserializer{
       
       if (isaList(m.getReturnType())){
         String columnName = m.getName().substring(3);
-        Class listClass = null;
+        Class<?> listClass = null;
         Type returnType = m.getGenericReturnType();
         if (returnType instanceof ParameterizedType){
           ParameterizedType type = (ParameterizedType) returnType;
           Type[] typeArguments = type.getActualTypeArguments();
           for(Type typeArgument : typeArguments){
-            Class typeArgClass = (Class) typeArgument;
-            listClass = (Class) typeArgument;
+            listClass = (Class<?>) typeArgument;
           }
         }
-        if (listClass.equals( Integer.class ) || listClass.equals(String.class) 
-                || listClass.equals(Long.class) || listClass.equals(Float.class)
-                || listClass.equals(Double.class) || listClass.equals(Short.class)
-                || listClass.equals(Byte.class) || listClass.equals(Boolean.class)){
+        if (protoPrimitives.contains(listClass)) {
           columnNames.add(columnName);
           columnTypes.add(TypeInfoFactory.getListTypeInfo(TypeInfoFactory.getPrimitiveTypeInfoFromJavaPrimitive(listClass)));
         } else {
@@ -383,6 +380,14 @@ public class ProtobufDeserializer implements Deserializer{
       }
     }
   }
+  
+  private static Set<Class<?>> protoPrimitives = Sets.<Class<?>>newHashSet(
+	Boolean.class, 
+	Byte.class, Short.class, Integer.class, Long.class,
+	Float.class, Double.class,
+	String.class
+  );
+  
 
   public ObjectInspector createObjectInspectorWorker(TypeInfo ti) {
     ObjectInspector result=null;
@@ -455,53 +460,52 @@ public class ProtobufDeserializer implements Deserializer{
     return m.hasField(f);
   }
   
+  public Method findMethodIgnoreCase(Class<?> cls, String methodName) {
+	Method[] methods = cls.getMethods();
+	for (int i=0;i<methods.length;i++){
+	  if (methods[i].getName().equalsIgnoreCase(methodName)){
+	    return methods[i];
+	  }
+	}
+	return NO_SUCH_METHOD;
+  }
+  
+  public Map<String, Method> getCachedSubMap(Map<Class<?>, Map<String, Method>> cache, Class<?> cls) {
+	  Map<String, Method> classMap = cache.get(cls);
+	  if(classMap == null) {
+		  classMap = new HashMap<String, Method>();
+		  cache.put(cls, classMap);
+	  }
+	  return classMap;
+  }
+  
   public boolean reflectHas(Object o, String prop) throws Exception{
-    Method m = null;
-    Object result = null;
-    StringBuilder sb = new StringBuilder();
-    sb.append("has");
-    sb.append(prop);
-    ClassMethod cm = new ClassMethod(o.getClass(),sb.toString());
-    m = this.cachedHas.get(cm);
-
+	final Class<?> cls = o.getClass();
+	final Map<String, Method> classMap = getCachedSubMap(this.cachedHas, cls);
+    Method m = classMap.get(prop);
     if (m==null){
-      Method [] methods = o.getClass().getMethods();
-       for ( int i=0;i<methods.length; i++){
-        if (methods[i].getName().equalsIgnoreCase(sb.toString())){
-          m = methods[i];
-        }
-      }
+      m = findMethodIgnoreCase(cls, "has"+prop);
+      classMap.put(prop, m);
     }
     //Methods like xCount (which need to be removed) are artifically generated
     //thus we say they always exist for now
-    if (m == null){
+    if (m == NO_SUCH_METHOD){
       return true;
     } else {
-      this.cachedHas.put(cm,m);
-      result = m.invoke(o, new Object[0]);
+      Object result = m.invoke(o, noArgs);
       return (Boolean.TRUE.equals(result));
     }
   }
 
-
   public Object reflectGet(Object o, String prop) throws Exception{
-    Method m = null;
-    Object result = null;
-    StringBuilder sb = new StringBuilder();
-    sb.append("get");
-    sb.append(prop);
-    ClassMethod cm = new ClassMethod(o.getClass(),sb.toString());
-    m = this.cached.get(cm);
+    final Class<?> cls = o.getClass();
+    final Map<String, Method> classMap = getCachedSubMap(this.cached, cls);
+    Method m = classMap.get(prop); 
     if (m==null){
-      Method [] methods = o.getClass().getMethods();
-      for ( int i=0;i<methods.length; i++){
-        if (methods[i].getName().equalsIgnoreCase(sb.toString())){
-          m = methods[i];
-        }
-      }
-      this.cached.put(cm, m);
+      m = findMethodIgnoreCase(cls, "get"+prop);
+      classMap.put(prop, m);
     }
-    result = m.invoke(o, noArgs );
+    Object result = m.invoke(o, noArgs);
     return result;
   }
 
